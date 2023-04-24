@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Particle Simulation</title>
+    <style>
+            body {
+                margin: 0;
+                overflow: hidden;
+            }
+            canvas {
+                display: block;
+                margin: 0 auto;
+                background-color: #000;
+            }
+            #frameRateContainer {
+                position: absolute;
+                top: 10px;
+                right: 10px;
+                opacity: 0;
+            }
+            #frameRate {
+                color: #FFF;
+                font-size: 16px;
+            }
+            #buttons {
+                position: absolute;
+                bottom: 10px;
+                left: 50%;
+                transform: translateX(-50%);
+                opacity: 0;
+            }
+
+
+    </style>
+</head>
+<body>
+<canvas id="particleCanvas"></canvas>
+<div id="frameRateContainer">
+    <div id="frameRate">60 FPS</div>
+</div>
+<div id="buttons">
+    <button onclick="stopAnimation()">Stop</button>
+    <button onclick="slowDown()">Slow Down</button>
+    <button onclick="fastForward()">Fast Forward</button>
+</div>
+<script>
+let timeoutId;
+const buttons = document.getElementById('buttons');
+document.addEventListener('mousemove', () => {
+    clearTimeout(timeoutId);
+    buttons.style.opacity = 1;
+    frameRateContainer.style.opacity = 1;
+    timeoutId = setTimeout(() => {
+        buttons.style.opacity = 0;
+        frameRateContainer.style.opacity = 0;
+    }, 3000);
+});
+class Particle {
+    constructor(x, y, speed, direction, size) {
+        this.x = x;
+        this.y = y;
+        this.vx = speed * Math.cos(direction);
+        this.vy = speed * Math.sin(direction);
+        this.ax = 0;
+        this.ay = 0;
+        this.size = size;
+        this.mass = size;
+    }
+
+    update(dt) {
+        this.x += this.vx * dt + 0.5 * this.ax * dt * dt;
+        this.y += this.vy * dt + 0.5 * this.ay * dt * dt;
+
+        this.vx += 0.5 * this.ax * dt;
+        this.vy += 0.5 * this.ay * dt;
+
+        // Periodic boundary conditions
+        if (this.x > canvas.width) {
+            this.x -= canvas.width;
+        } else if (this.x < 0) {
+            this.x += canvas.width;
+        }
+
+        if (this.y > canvas.height) {
+            this.y -= canvas.height;
+        } else if (this.y < 0) {
+            this.y += canvas.height;
+        }
+    }
+}
+
+const canvas = document.getElementById('particleCanvas');
+const ctx = canvas.getContext('2d');
+const frameRateDisplay = document.getElementById('frameRate');
+const particleCount = 150;
+const particles = [];
+const minSize = 1;
+const maxSize = 4;
+let dt = 0.1;
+
+window.addEventListener('resize', updateCanvasSize);
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+updateCanvasSize();
+            
+for (let i = 0; i < particleCount; i++) {
+    const x = Math.random() * canvas.width;
+    const y = Math.random() * canvas.height;
+    const speed = Math.random() * 2;
+    const direction = Math.random() * 2 * Math.PI;
+    const size = minSize + Math.random() * (maxSize - minSize);
+    particles.push(new Particle(x, y, speed, direction, size));
+}
+
+function animate() {
+    if (!isStopped) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        for (let i = 0; i < particleCount; i++) {
+            const p1 = particles[i];
+            p1.update(dt);
+            ctx.beginPath();
+            ctx.arc(p1.x, p1.y, p1.size, 0, 2 * Math.PI);
+            ctx.fillStyle = p1.clicked ? '#FF0000' : '#FFF';
+            ctx.fill();
+
+            for (let j = i + 1; j < particleCount; j++) {
+                const p2 = particles[j];
+                const dx = p2.x - p1.x;
+                const dy = p2.y - p1.y;
+                const dx_periodic = dx - Math.round(dx / canvas.width) * canvas.width;
+                const dy_periodic = dy - Math.round(dy / canvas.height) * canvas.height;
+                const distance = Math.sqrt(dx_periodic * dx_periodic + dy_periodic * dy_periodic);
+
+                const force = (p1.mass * p2.mass) / (distance ** 2 + 30);
+                const normalizedForce = Math.abs(force) / 0.005;
+                const angle = Math.atan2(dy_periodic, dx_periodic);
+
+                const ax = force * Math.cos(angle);
+                const ay = force * Math.sin(angle);
+
+                p1.ax += ax / p1.mass;
+                p1.ay += ay / p1.mass;
+                p2.ax -= ax / p2.mass;
+                p2.ay -= ay / p2.mass;
+
+                ctx.beginPath();
+                ctx.moveTo(p1.x, p1.y);
+                ctx.lineTo(p1.x + dx_periodic, p1.y + dy_periodic);
+                ctx.strokeStyle = `rgba(255, 255, 255, ${normalizedForce})`;
+                ctx.stroke();
+            }
+        }
+
+        for (let i = 0; i < particleCount; i++) {
+            const p = particles[i];
+            p.vx += 0.5 * p.ax * dt;
+            p.vy += 0.5 * p.ay * dt;
+            p.ax = 0;
+            p.ay = 0;
+        }
+        requestAnimationFrame(animate);
+    }
+}
+
+function updateFrameRateDisplay() {
+    frameRateDisplay.textContent = Math.round(dt*600) + " FPS";
+}
+
+canvas.addEventListener('click', (event) => {
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
+
+    for (let i = 0; i < particleCount; i++) {
+        const p = particles[i];
+        const dx = mouseX - p.x;
+        const dy = mouseY - p.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance <= p.size) {
+            p.clicked = !p.clicked;
+            break;
+        }
+    }
+});
+
+let isStopped = false;
+
+function stopAnimation() {
+    isStopped = !isStopped;
+    if (!isStopped) {
+        requestAnimationFrame(animate);
+    }
+}
+
+function slowDown() {
+    dt /= 1.5;
+    updateFrameRateDisplay();
+}
+
+function fastForward() {
+    dt *= 1.5;
+    updateFrameRateDisplay();
+}
+
+function updateCanvasSize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+
+
+requestAnimationFrame(animate);
+
+
+</script>
+</body>
+</html>
+
